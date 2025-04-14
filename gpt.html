@@ -1,0 +1,196 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bitcoin Transaction Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f7f9fc;
+      color: #333;
+      margin: 0;
+    }
+    header {
+      background: #f7931a;
+      color: white;
+      padding: 1em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    h1 { margin: 0; }
+    .container { padding: 20px; }
+    .card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      padding: 1em;
+      margin-bottom: 20px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+    .price-up { color: green; }
+    .price-down { color: red; }
+    footer {
+      text-align: center;
+      padding: 1em;
+      background: #eee;
+      color: #555;
+    }
+    .news-item {
+      margin-bottom: 15px;
+    }
+    .news-item a {
+      color: #1a0dab;
+      text-decoration: none;
+    }
+    .news-item a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bitcoin Transaction Monitor</h1>
+    <span id="last-update">Last updated: --</span>
+  </header>
+  <div class="container">
+
+    <div class="grid">
+      <div class="card">
+        <h3>BTC Price</h3>
+        <div id="btc-price">--</div>
+        <div id="btc-usd">--</div>
+        <div id="btc-change">--</div>
+        <div id="change-timestamp" style="font-size: 0.9em; color: gray;"></div>
+      </div>
+      <div class="card">
+        <h3>Market Cap</h3>
+        <div id="market-cap">--</div>
+      </div>
+      <div class="card">
+        <h3>Fear & Greed Index</h3>
+        <canvas id="fgiChart" width="200" height="120"></canvas>
+      </div>
+      <div class="card">
+        <h3>Mempool Size</h3>
+        <div id="mempool-size">--</div>
+        <p style="font-size: 0.9em; color: gray;">The mempool contains unconfirmed transactions waiting to be included in blocks. A larger size can indicate higher network congestion and transaction fees.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>7-Day BTC Price Chart (EUR)</h3>
+      <canvas id="priceChart" height="100"></canvas>
+    </div>
+
+    <div class="card">
+      <h3>Latest Bitcoin News</h3>
+      <div id="news-list">Loading news...</div>
+    </div>
+  </div>
+
+  <footer>
+    Developed by Brian Groth & ChatGPT
+  </footer>
+
+  <script>
+    async function fetchData() {
+      try {
+        const [btcData, chartData, fgiData, mempoolData, newsData] = await Promise.all([
+          fetch("https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=true").then(res => res.json()),
+          fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=7").then(res => res.json()),
+          fetch("https://api.alternative.me/fng/?limit=1").then(res => res.json()),
+          fetch("https://api.blockchain.info/q/unconfirmedcount?cors=true").then(res => res.text()),
+          fetch("https://min-api.cryptocompare.com/data/v2/news/?lang=EN").then(res => res.json())
+        ]);
+
+        const priceEUR = btcData.market_data.current_price.eur;
+        const priceUSD = btcData.market_data.current_price.usd;
+        const change = btcData.market_data.price_change_percentage_24h;
+        const now = new Date();
+
+        document.getElementById("btc-price").innerText = priceEUR.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+        document.getElementById("btc-usd").innerText = priceUSD.toLocaleString("en-US", { style: "currency", currency: "USD" });
+        document.getElementById("btc-change").innerText = `${change.toFixed(2)}%`;
+        document.getElementById("btc-change").className = change >= 0 ? 'price-up' : 'price-down';
+        document.getElementById("change-timestamp").innerText = `24h change as of ${now.toLocaleString()}`;
+        document.getElementById("market-cap").innerText = btcData.market_data.market_cap.eur.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+        document.getElementById("mempool-size").innerText = `${parseInt(mempoolData).toLocaleString()} txs`;
+
+        document.getElementById("last-update").innerText = `Last updated: ${now.toLocaleTimeString()}`;
+
+        // FGI speedometer
+        const fgi = parseInt(fgiData.data[0].value);
+        const fgiCtx = document.getElementById('fgiChart').getContext('2d');
+        new Chart(fgiCtx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Fear', 'Neutral', 'Greed'],
+            datasets: [{
+              data: [Math.min(fgi, 50), Math.max(0, 100 - fgi - Math.min(fgi, 50)), Math.max(0, fgi - 50)],
+              backgroundColor: ['#dc3545', '#ffc107', '#28a745'],
+              borderWidth: 1
+            }]
+          },
+          options: {
+            cutout: '70%',
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: false }
+            }
+          }
+        });
+
+        // Price Chart
+        const ctx = document.getElementById("priceChart").getContext("2d");
+        const prices = chartData.prices.map(p => p[1]);
+        const labels = chartData.prices.map(p => {
+          const date = new Date(p[0]);
+          return `${date.getDate()}/${date.getMonth() + 1}`;
+        });
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: "BTC Price (EUR)",
+              data: prices,
+              borderColor: "blue",
+              fill: false
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: true }
+            }
+          }
+        });
+
+        // News
+        const newsList = document.getElementById("news-list");
+        newsList.innerHTML = "";
+        newsData.Data.slice(0, 5).forEach(article => {
+          const item = document.createElement("div");
+          item.className = "news-item";
+          item.innerHTML = `
+            <h4><a href="${article.url}" target="_blank">${article.title}</a></h4>
+            <p>${new Date(article.published_on * 1000).toLocaleString()}</p>
+            <p>${article.body.substring(0, 150)}...</p>
+          `;
+          newsList.appendChild(item);
+        });
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    }
+
+    fetchData();
+    setInterval(fetchData, 60000);
+  </script>
+</body>
+</html>
