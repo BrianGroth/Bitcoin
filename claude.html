@@ -57,7 +57,58 @@
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
       padding: 20px;
       overflow: hidden;
+      border: 3px solid transparent; /* Add border for visual distinction */
     }
+
+    /* Distinct colors for each card */
+    .price-card {
+      grid-column: span 3;
+      background-color: #fef9e7; /* Light yellow */
+      border-color: #f9e79f; /* Yellow border */
+    }
+
+    .chart-card {
+      grid-column: span 6;
+      background-color: #e8f8f5; /* Light teal */
+      border-color: #76d7c4; /* Teal border */
+    }
+
+    .fear-greed-card {
+      grid-column: span 3;
+      background-color: #fbeee6; /* Light orange */
+      border-color: #f5b041; /* Orange border */
+    }
+
+    .market-stats-card {
+      grid-column: span 4;
+      background-color: #f4ecf7; /* Light purple */
+      border-color: #bb8fce; /* Purple border */
+    }
+
+    .supply-stats-card {
+      grid-column: span 4;
+      background-color: #eaf2f8; /* Light blue */
+      border-color: #5dade2; /* Blue border */
+    }
+
+    .mempool-card {
+      grid-column: span 4;
+      background-color: #f9ebea; /* Light red */
+      border-color: #e74c3c; /* Red border */
+    }
+
+    .transactions-card {
+      grid-column: span 6;
+      background-color: #fef5e7; /* Light peach */
+      border-color: #f8c471; /* Peach border */
+    }
+
+    .news-card {
+      grid-column: span 6;
+      background-color: #eafaf1; /* Light green */
+      border-color: #58d68d; /* Green border */
+    }
+
     .card-header {
       display: flex;
       justify-content: space-between;

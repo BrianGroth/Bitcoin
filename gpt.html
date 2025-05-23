@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -102,7 +101,7 @@
         const [btcData, chartData, fgiData, mempoolData, newsData] = await Promise.all([
           fetch("https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=true").then(res => res.json()),
           fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=7").then(res => res.json()),
-          fetch("https://api.alternative.me/fng/?limit=1").then(res => res.json()),
+          fetch(`https://api.alternative.me/fng/?limit=1&_=${Date.now()}`).then(res => res.json()),
           fetch("https://api.blockchain.info/q/unconfirmedcount?cors=true").then(res => res.text()),
           fetch("https://min-api.cryptocompare.com/data/v2/news/?lang=EN").then(res => res.json())
         ]);
