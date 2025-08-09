@@ -294,7 +294,13 @@
     const state = {
       currency: 'eur',
       range: 7,
-      proxy: 'none',
+  // Use a CORS proxy by default to avoid fetch failures from GitHub Pages.  The
+  // mempool.space and blockchain.info APIs do not set an `Access-Control-Allow-Origin` header,
+  // so fetching them directly from a GitHub Pages domain will be blocked by CORS.  Using
+  // the `allorigins` proxy routes requests through a service that returns the response
+  // with appropriate CORS headers.  You can switch this to `'none'` if you host the
+  // page on a domain with server‑side proxying or if the APIs later add CORS support.
+  proxy: 'allorigins',
       price: null,
       market: null,
       supply: null,
