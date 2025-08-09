@@ -120,17 +120,37 @@
     ];
     // Helper: fetch JSON with timeout
     async function fetchJson(url, timeout = 8000) {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeout);
-      try {
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(id);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return await res.json();
-      } catch (e) {
-        clearTimeout(id);
-        throw e;
+      let attempts = 0;
+      while (attempts < 3) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(id);
+          if (res.status === 401) {
+            attempts++;
+            if (attempts < 3) {
+              await new Promise(r => setTimeout(r, 1000 * attempts));
+              continue;
+            } else {
+              throw new Error('HTTP 401 (Unauthorized) after 3 attempts');
+            }
+          }
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return await res.json();
+        } catch (e) {
+          clearTimeout(id);
+          if (e.name === 'AbortError') {
+            attempts++;
+            if (attempts < 3) {
+              await new Promise(r => setTimeout(r, 1000 * attempts));
+              continue;
+            }
+          }
+          throw e;
+        }
       }
+      throw new Error('Failed to fetch after 3 attempts');
     }
     // Helper: fetch current BTC price (CoinGecko)
     async function getCurrentPrice() {
