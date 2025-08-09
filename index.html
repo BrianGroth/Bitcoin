@@ -204,52 +204,83 @@
       <!-- Price and market stats -->
       <div class="card" id="price-card">
         <h2>Price</h2>
+        <!-- Explanation for the price card -->
+        <p class="description">The price shows how much one Bitcoin is worth in the selected currency. Understanding the current price helps gauge your investment's value.</p>
         <div class="metric" id="price-value">--</div>
         <div><span id="price-change" class="metric-change neutral">--</span></div>
+        <!-- Per‑card timestamp to indicate when this data was last updated -->
         <div id="price-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <div class="card" id="market-card">
         <h2>Market Stats</h2>
+        <!-- Explanation for the market stats card -->
+        <p class="description">Market statistics summarise the total value and trading activity of Bitcoin, offering insight into overall investor sentiment and liquidity.</p>
         <p>Market Cap: <span class="metric" id="market-cap">--</span></p>
         <p>24h Volume: <span class="metric" id="market-volume">--</span></p>
         <p>Dominance: <span class="metric" id="market-dominance">--</span></p>
+        <!-- Per‑card timestamp for market stats -->
+        <div id="market-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <div class="card" id="supply-card">
         <h2>Supply</h2>
+        <!-- Explanation for the supply card -->
+        <p class="description">The circulating supply shows how many bitcoins are in circulation, while the percent mined reflects the portion of the total 21 million supply already issued. These metrics highlight scarcity.</p>
         <p>Circulating: <span class="metric" id="supply-circulating">--</span></p>
         <p>Percent Mined: <span class="metric" id="supply-percent">--</span></p>
+        <!-- Per‑card timestamp for supply -->
+        <div id="supply-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <div class="card" id="network-card">
         <h2>Network</h2>
+        <!-- Explanation for the network card -->
+        <p class="description">Network metrics, such as block height and hash rate, measure the blockchain's progress and security. A higher hash rate indicates stronger network security.</p>
         <p>Block Height: <span class="metric" id="network-height">--</span></p>
         <p>Hash Rate: <span class="metric" id="network-hashrate">--</span></p>
+        <!-- Per‑card timestamp for network -->
+        <div id="network-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <div class="card" id="mempool-card">
         <h2>Mempool</h2>
+        <!-- Explanation for the mempool card -->
+        <p class="description">The mempool holds unconfirmed transactions waiting to be added to the blockchain. Transaction count and size indicate network congestion and fee pressure.</p>
         <p>Transactions: <span class="metric" id="mempool-count">--</span></p>
         <p>Size: <span class="metric" id="mempool-size">--</span></p>
+        <!-- Per‑card timestamp for mempool -->
+        <div id="mempool-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <!-- Fear & Greed index chart -->
       <div class="card" id="fgi-card">
         <h2>Fear &amp; Greed Index</h2>
+        <!-- Explanation for the Fear & Greed Index card -->
+        <p class="description">The Fear and Greed Index quantifies market sentiment on a scale from fear to greed. It helps gauge whether traders are overly pessimistic or euphoric.</p>
         <div class="metric" id="fgi-value">--</div>
         <div class="chart-container">
           <canvas id="fgi-chart" aria-label="Fear and Greed chart" role="img"></canvas>
         </div>
+        <!-- Per‑card timestamp for FGI -->
+        <div id="fgi-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <!-- Price history chart -->
       <div class="card" id="chart-card" style="grid-column: span 2;">
         <h2>Price Chart</h2>
+        <!-- Explanation for the price chart card -->
+        <p class="description">The price chart illustrates Bitcoin’s price movement over the selected time range, helping identify trends and volatility.</p>
         <div class="chart-container">
           <canvas id="price-chart" aria-label="Price history chart" role="img"></canvas>
         </div>
+        <!-- Per‑card timestamp for chart -->
+        <div id="chart-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
       </div>
       <!-- News section -->
       <div class="card" id="news-card" style="grid-column: span 2;">
         <h2>Latest News</h2>
+        <!-- Explanation for the news section card -->
+        <p class="description">News headlines provide context on regulatory developments, technological updates and market events that can influence Bitcoin’s price.</p>
         <div class="news-list" id="news-list">
           <div class="loading">Loading news...</div>
         </div>
+        <!-- Per‑card timestamp for news -->
+        <div id="news-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
         <button id="load-more-news" style="margin-top:0.5rem; display:none;">Load more</button>
       </div>
     </div>
@@ -391,6 +422,11 @@
       } else {
         domElem.textContent = '--';
       }
+      // Update timestamp for market stats
+      const marketTs = document.getElementById('market-timestamp');
+      if (marketTs) {
+        marketTs.textContent = `Updated: ${new Date().toLocaleString()}`;
+      }
     }
     function updateSupplyCard() {
       const circElem = document.getElementById('supply-circulating');
@@ -398,6 +434,11 @@
       if (!state.supply) return;
       circElem.textContent = `${formatNumber(state.supply.circulating, 0)} BTC`;
       percElem.textContent = `${formatNumber(state.supply.percentMined, 2)}%`;
+      // Update timestamp for supply
+      const supplyTs = document.getElementById('supply-timestamp');
+      if (supplyTs) {
+        supplyTs.textContent = `Updated: ${new Date().toLocaleString()}`;
+      }
     }
     function updateNetworkCard() {
       const heightElem = document.getElementById('network-height');
@@ -405,6 +446,11 @@
       if (!state.network) return;
       heightElem.textContent = state.network.blockHeight;
       hashElem.textContent = `${formatNumber(state.network.hashRate / 1e6, 2)} PH/s`; // convert to petahash per second
+      // Update timestamp for network
+      const networkTs = document.getElementById('network-timestamp');
+      if (networkTs) {
+        networkTs.textContent = `Updated: ${new Date().toLocaleString()}`;
+      }
     }
     function updateMempoolCard() {
       const countElem = document.getElementById('mempool-count');
@@ -412,6 +458,11 @@
       if (!state.mempool) return;
       countElem.textContent = formatNumber(state.mempool.count, 0);
       sizeElem.textContent = formatFileSize(state.mempool.size);
+      // Update timestamp for mempool
+      const mempoolTs = document.getElementById('mempool-timestamp');
+      if (mempoolTs) {
+        mempoolTs.textContent = `Updated: ${new Date().toLocaleString()}`;
+      }
     }
     function updateFGICard() {
       const valueElem = document.getElementById('fgi-value');
@@ -437,6 +488,11 @@
         fgiChartInstance.update();
       } else {
         fgiChartInstance = new Chart(ctx, { type: 'doughnut', data: chartData, options });
+      }
+      // Update timestamp for fear & greed index
+      const fgiTs = document.getElementById('fgi-timestamp');
+      if (fgiTs) {
+        fgiTs.textContent = `Updated: ${new Date().toLocaleString()}`;
       }
     }
     function updatePriceChart() {
@@ -472,6 +528,11 @@
       } else {
         priceChartInstance = new Chart(ctx, { type: 'line', data, options });
       }
+      // Update timestamp for price chart
+      const chartTs = document.getElementById('chart-timestamp');
+      if (chartTs) {
+        chartTs.textContent = `Updated: ${new Date().toLocaleString()}`;
+      }
     }
     function updateNewsSection() {
       const listElem = document.getElementById('news-list');
@@ -504,6 +565,11 @@
         loadMoreBtn.style.display = 'inline-block';
       } else {
         loadMoreBtn.style.display = 'none';
+      }
+      // Update timestamp for news
+      const newsTs = document.getElementById('news-timestamp');
+      if (newsTs) {
+        newsTs.textContent = `Updated: ${new Date().toLocaleString()}`;
       }
     }
 
