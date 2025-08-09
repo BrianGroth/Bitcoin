@@ -266,19 +266,21 @@
       maxSupply: 21000000,
       autoRefreshInterval: 60 * 1000, // 60 seconds
       apiEndpoints: {
-        coingecko: {
-          price: (currency) => `https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=${currency}&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`,
-          history: (currency, days) => `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=${currency}&days=${days}`,
-          global: 'https://api.coingecko.com/api/v3/global'
-        },
-        blockchainInfo: {
-          mempoolCount: 'https://blockchain.info/q/unconfirmedcount',
-          mempoolSize: 'https://blockchain.info/q/unconfirmedsize',
-          blockHeight: 'https://blockchain.info/q/getblockcount',
-          hashRate: 'https://blockchain.info/q/hashrate'
-        },
+        /**
+         * New API endpoints with CORS support.
+         * - prices: returns the latest BTC price in multiple fiat currencies (USD, EUR, GBP) via mempool.space.
+         * - stats: network and economic statistics from blockchain.info.
+         * - history: price history (USD) for the specified number of days; prices will be converted to the selected currency on the client.
+         * - mempool: mempool transaction count and virtual size via mempool.space.
+         * - fearGreed: fear and greed index from alternative.me.
+         * - news: Bitcoin news from CryptoCompare (English only).
+         */
+        prices: 'https://mempool.space/api/v1/prices',
+        stats: 'https://api.blockchain.info/stats',
+        history: (days) => `https://api.blockchain.info/charts/market-price?timespan=${days}days&format=json`,
+        mempool: 'https://mempool.space/api/mempool',
         fearGreed: 'https://api.alternative.me/fng/?limit=1',
-        cryptoCompareNews: 'https://min-api.cryptocompare.com/data/v2/news/?lang=EN'
+        news: 'https://min-api.cryptocompare.com/data/v2/news/?categories=Bitcoin&lang=EN'
       },
       // Proxy servers in case of CORS issues; default is empty (direct fetch)
       proxyServers: {
@@ -353,10 +355,22 @@
       const timestampElem = document.getElementById('price-timestamp');
       if (!state.price) return;
       priceElem.textContent = formatCurrency(state.price.current, state.currency.toUpperCase());
-      const change = state.price.change24h;
+      let change = state.price.change24h;
+      // If change is not set yet, attempt to compute from history (previous data point)
+      if (change === null || change === undefined || isNaN(change)) {
+        if (state.history && state.history.prices && state.history.prices.length >= 2) {
+          const prevPrice = state.history.prices[state.history.prices.length - 2];
+          change = ((state.price.current - prevPrice) / prevPrice) * 100;
+          state.price.change24h = change;
+        } else {
+          change = 0;
+        }
+      }
       changeElem.textContent = `${change >= 0 ? '+' : ''}${formatNumber(change)}%`;
       changeElem.className = 'metric-change ' + (change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral');
-      timestampElem.textContent = `Updated: ${new Date(state.price.lastUpdated * 1000).toLocaleString()}`;
+      // Use current time if lastUpdated is not provided by the API
+      const updatedTs = state.price.lastUpdated ? state.price.lastUpdated * 1000 : Date.now();
+      timestampElem.textContent = `Updated: ${new Date(updatedTs).toLocaleString()}`;
     }
     function updateMarketCard() {
       const capElem = document.getElementById('market-cap');
@@ -365,7 +379,12 @@
       if (!state.market) return;
       capElem.textContent = formatCurrency(state.market.marketCap, state.currency.toUpperCase(), 0);
       volElem.textContent = formatCurrency(state.market.volume24h, state.currency.toUpperCase(), 0);
-      domElem.textContent = `${formatNumber(state.market.dominance, 2)}%`;
+      // Dominance may be null if unavailable; show placeholder instead of NaN
+      if (state.market.dominance !== null && state.market.dominance !== undefined) {
+        domElem.textContent = `${formatNumber(state.market.dominance, 2)}%`;
+      } else {
+        domElem.textContent = '--';
+      }
     }
     function updateSupplyCard() {
       const circElem = document.getElementById('supply-circulating');
@@ -484,53 +503,51 @@
 
     // Data fetch functions
     async function fetchPrice() {
-      const endpoint = CONFIG.apiEndpoints.coingecko.price(state.currency);
-      const data = await fetchWithCache(endpoint, `price-${state.currency}`);
-      if (!data.bitcoin) throw new Error('Invalid price data');
+      // Fetch latest BTC price in various fiat currencies (USD, EUR, GBP)
+      const prices = await fetchWithCache(CONFIG.apiEndpoints.prices, 'prices', 30000);
+      const currencyKey = state.currency.toUpperCase();
       state.price = {
-        current: data.bitcoin[state.currency],
-        marketCap: data.bitcoin[`${state.currency}_market_cap`],
-        volume24h: data.bitcoin[`${state.currency}_24h_vol`],
-        change24h: data.bitcoin[`${state.currency}_24h_change`],
-        lastUpdated: data.bitcoin.last_updated_at
+        current: prices[currencyKey],
+        change24h: null,
+        lastUpdated: Math.floor(Date.now() / 1000)
       };
     }
-    async function fetchGlobal() {
-      const data = await fetchWithCache(CONFIG.apiEndpoints.coingecko.global, 'global');
-      const marketCapUsd = data.data.total_market_cap[state.currency];
-      const btcCapUsd = data.data.market_cap_percentage.bitcoin;
-      state.market = {
-        marketCap: state.price.marketCap,
-        volume24h: state.price.volume24h,
-        dominance: btcCapUsd
-      };
+    async function fetchStats() {
+      // Fetch network and economic stats from blockchain.info
+      const stats = await fetchWithCache(CONFIG.apiEndpoints.stats, 'stats', 60000);
+      // circulating supply in BTC
+      const circulating = stats.totalbc / 100000000;
+      const percentMined = (circulating / CONFIG.maxSupply) * 100;
       state.supply = {
-        circulating: data.data.active_cryptocurrencies ? state.price.current / (btcCapUsd / 100) : 0, // fallback if not available
-        percentMined: (data.data.circulating_supply / CONFIG.maxSupply) * 100
+        circulating,
+        percentMined
       };
-    }
-    async function fetchNetwork() {
-      const [blockHeight, hashRate] = await Promise.all([
-        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.blockHeight, 'blockHeight'),
-        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.hashRate, 'hashRate')
-      ]);
+      // network metrics
       state.network = {
-        blockHeight: blockHeight,
-        hashRate: Number(hashRate)
+        blockHeight: stats.n_blocks_total,
+        hashRate: stats.hash_rate
+      };
+      // convert USD denominated values to selected currency
+      const ratio = stats.market_price_usd > 0 ? (state.price.current / stats.market_price_usd) : 1;
+      const marketCap = circulating * state.price.current;
+      const volume24h = stats.trade_volume_usd * ratio;
+      state.market = {
+        marketCap,
+        volume24h,
+        dominance: null
       };
     }
     async function fetchMempool() {
-      const [count, size] = await Promise.all([
-        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.mempoolCount, 'mempoolCount'),
-        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.mempoolSize, 'mempoolSize')
-      ]);
+      // Fetch mempool statistics from mempool.space
+      const mempool = await fetchWithCache(CONFIG.apiEndpoints.mempool, 'mempool', 30000);
       state.mempool = {
-        count: Number(count),
-        size: Number(size)
+        count: mempool.count,
+        size: mempool.vsize
       };
     }
     async function fetchFGI() {
-      const data = await fetchWithCache(CONFIG.apiEndpoints.fearGreed, 'fgi');
+      // Fear and Greed Index
+      const data = await fetchWithCache(CONFIG.apiEndpoints.fearGreed, 'fgi', 600000);
       const latest = data.data[0];
       state.fgi = {
         value: parseInt(latest.value, 10),
@@ -538,26 +555,44 @@
       };
     }
     async function fetchHistory() {
-      const data = await fetchWithCache(CONFIG.apiEndpoints.coingecko.history(state.currency, state.range), `history-${state.currency}-${state.range}`);
-      state.history = {
-        labels: data.prices.map(p => new Date(p[0])),
-        prices: data.prices.map(p => p[1])
-      };
+      // Fetch USD price history and convert to selected currency
+      const days = state.range;
+      const data = await fetchWithCache(CONFIG.apiEndpoints.history(days), `history-${days}`, 600000);
+      const values = data.values || [];
+      if (!values || values.length === 0) {
+        state.history = { labels: [], prices: [] };
+        return;
+      }
+      // Determine conversion ratio using the most recent USD price from the history dataset
+      const lastUsdPrice = values[values.length - 1].y;
+      const ratio = lastUsdPrice > 0 ? (state.price.current / lastUsdPrice) : 1;
+      const labels = values.map(v => new Date(v.x * 1000));
+      const prices = values.map(v => v.y * ratio);
+      state.history = { labels, prices };
+      // Compute 24h change using previous data point if available
+      if (prices.length >= 2) {
+        const prevPrice = prices[prices.length - 2];
+        state.price.change24h = ((state.price.current - prevPrice) / prevPrice) * 100;
+      }
     }
     async function fetchNews() {
-      const data = await fetchWithCache(CONFIG.apiEndpoints.cryptoCompareNews, 'news', 600000); // 10min TTL
-      if (!data.Data) throw new Error('Invalid news data');
-      state.news = data.Data;
+      // Fetch latest Bitcoin news articles
+      const data = await fetchWithCache(CONFIG.apiEndpoints.news, 'news', 600000);
+      if (!data.Data) {
+        state.news = [];
+      } else {
+        state.news = data.Data;
+      }
     }
 
     async function refreshData() {
       try {
         // Show loading states
         document.getElementById('last-update').textContent = 'Updating...';
+        state.newsPage = 0; // reset news pagination on refresh
         await fetchPrice();
         await Promise.all([
-          fetchGlobal(),
-          fetchNetwork(),
+          fetchStats(),
           fetchMempool(),
           fetchFGI(),
           fetchHistory(),
