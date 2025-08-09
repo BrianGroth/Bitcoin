@@ -1,17 +1,610 @@
 <!DOCTYPE html>
+<!--
+  Enhanced Bitcoin dashboard
+  This page implements multiple improvements over the original gpt.html version.
+  Key features:
+    • Consolidated API configuration
+    • Error handling with graceful fallbacks
+    • User‑selectable currency and time range for the price chart
+    • Responsive design with light/dark theme toggle
+    • Charts with axis titles and tooltips
+    • Additional metrics: market dominance, network stats, supply stats and mempool
+    • Improved news section with images and load‑more functionality
+    • Client‑side caching to reduce API calls
+    • Accessibility enhancements (semantic elements, ARIA labels)
+  No server‑side code is required: all data fetching happens via fetch()
+-->
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Projects</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bitcoin Dashboard</title>
+  <!-- Chart.js for charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Moment.js for date formatting -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+  <style>
+    :root {
+      /* Base colours used in both light and dark themes */
+      --color-primary: #f7931a; /* Bitcoin orange */
+      --color-bg: #f7f9fc;
+      --color-bg-alt: #ffffff;
+      --color-text: #333333;
+      --color-card-border: #e0e0e0;
+      --color-positive: #28a745;
+      --color-negative: #dc3545;
+      --color-neutral: #6c757d;
+    }
+    /* Dark theme overrides */
+    body.dark {
+      --color-bg: #181a1b;
+      --color-bg-alt: #242526;
+      --color-text: #e4e6eb;
+      --color-card-border: #3a3b3c;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--color-bg);
+      color: var(--color-text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background-color: var(--color-primary);
+      color: #ffffff;
+    }
+    header h1 {
+      margin: 0 0 0.5rem 0;
+      flex-grow: 1;
+      font-size: 1.5rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .controls label {
+      font-size: 0.9rem;
+      margin-right: 0.25rem;
+    }
+    select, button, input[type="checkbox"] {
+      padding: 0.3rem 0.5rem;
+      font-size: 0.9rem;
+      border-radius: 4px;
+      border: 1px solid var(--color-card-border);
+      background-color: var(--color-bg-alt);
+      color: var(--color-text);
+    }
+    main {
+      flex-grow: 1;
+      padding: 1rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background-color: var(--color-bg-alt);
+      border: 1px solid var(--color-card-border);
+      border-radius: 8px;
+      padding: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+    }
+    .metric {
+      font-size: 1.8rem;
+      font-weight: bold;
+    }
+    .metric-change {
+      font-size: 0.9rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 12px;
+      margin-left: 0.5rem;
+      display: inline-block;
+    }
+    .positive {
+      background-color: rgba(40, 167, 69, 0.15);
+      color: var(--color-positive);
+    }
+    .negative {
+      background-color: rgba(220, 53, 69, 0.15);
+      color: var(--color-negative);
+    }
+    .neutral {
+      background-color: rgba(108, 117, 125, 0.15);
+      color: var(--color-neutral);
+    }
+    /* Chart container styling */
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 300px;
+    }
+    /* News styles */
+    .news-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .news-item {
+      display: flex;
+      gap: 0.75rem;
+      border-bottom: 1px solid var(--color-card-border);
+      padding-bottom: 0.75rem;
+    }
+    .news-item img {
+      width: 80px;
+      height: 60px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+    .news-item .news-content h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+    .news-item .news-content p {
+      margin: 0.25rem 0 0 0;
+      font-size: 0.8rem;
+    }
+    .loading,
+    .error-message {
+      font-style: italic;
+      color: var(--color-neutral);
+    }
+    footer {
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.8rem;
+      background-color: var(--color-bg-alt);
+      border-top: 1px solid var(--color-card-border);
+    }
+  </style>
 </head>
 <body>
-    <h1>My Bitcoin Projects</h1>
-    <nav>
-        <ul>
-            <li><a href="claude.html">Claude version</a></li>
-            <li><a href="gpt.html">OpenAI version</a></li>
-        </ul>
-    </nav>
+  <header>
+    <h1>Bitcoin Dashboard</h1>
+    <!-- Control panel: currency, range and theme toggle -->
+    <div class="controls" aria-label="Controls">
+      <label for="currency-select">Currency:</label>
+      <select id="currency-select" name="currency">
+        <option value="usd">USD</option>
+        <option value="eur" selected>EUR</option>
+        <option value="gbp">GBP</option>
+      </select>
+      <label for="range-select">Range:</label>
+      <select id="range-select" name="range">
+        <option value="1">24 h</option>
+        <option value="7" selected>7 d</option>
+        <option value="30">30 d</option>
+        <option value="90">90 d</option>
+      </select>
+      <label for="theme-toggle">Dark mode:</label>
+      <input type="checkbox" id="theme-toggle" aria-label="Toggle dark mode" />
+      <button id="refresh-btn" aria-label="Refresh data">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <!-- Price and market stats -->
+      <div class="card" id="price-card">
+        <h2>Price</h2>
+        <div class="metric" id="price-value">--</div>
+        <div><span id="price-change" class="metric-change neutral">--</span></div>
+        <div id="price-timestamp" style="font-size:0.8rem;color:var(--color-neutral);"></div>
+      </div>
+      <div class="card" id="market-card">
+        <h2>Market Stats</h2>
+        <p>Market Cap: <span class="metric" id="market-cap">--</span></p>
+        <p>24h Volume: <span class="metric" id="market-volume">--</span></p>
+        <p>Dominance: <span class="metric" id="market-dominance">--</span></p>
+      </div>
+      <div class="card" id="supply-card">
+        <h2>Supply</h2>
+        <p>Circulating: <span class="metric" id="supply-circulating">--</span></p>
+        <p>Percent Mined: <span class="metric" id="supply-percent">--</span></p>
+      </div>
+      <div class="card" id="network-card">
+        <h2>Network</h2>
+        <p>Block Height: <span class="metric" id="network-height">--</span></p>
+        <p>Hash Rate: <span class="metric" id="network-hashrate">--</span></p>
+      </div>
+      <div class="card" id="mempool-card">
+        <h2>Mempool</h2>
+        <p>Transactions: <span class="metric" id="mempool-count">--</span></p>
+        <p>Size: <span class="metric" id="mempool-size">--</span></p>
+      </div>
+      <!-- Fear & Greed index chart -->
+      <div class="card" id="fgi-card">
+        <h2>Fear &amp; Greed Index</h2>
+        <div class="metric" id="fgi-value">--</div>
+        <div class="chart-container">
+          <canvas id="fgi-chart" aria-label="Fear and Greed chart" role="img"></canvas>
+        </div>
+      </div>
+      <!-- Price history chart -->
+      <div class="card" id="chart-card" style="grid-column: span 2;">
+        <h2>Price Chart</h2>
+        <div class="chart-container">
+          <canvas id="price-chart" aria-label="Price history chart" role="img"></canvas>
+        </div>
+      </div>
+      <!-- News section -->
+      <div class="card" id="news-card" style="grid-column: span 2;">
+        <h2>Latest News</h2>
+        <div class="news-list" id="news-list">
+          <div class="loading">Loading news...</div>
+        </div>
+        <button id="load-more-news" style="margin-top:0.5rem; display:none;">Load more</button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Built by Brian Groth &amp; ChatGPT</p>
+    <p id="last-update">Last update: --</p>
+  </footer>
+
+  <script>
+    // Configuration for API endpoints and options
+    const CONFIG = {
+      maxSupply: 21000000,
+      autoRefreshInterval: 60 * 1000, // 60 seconds
+      apiEndpoints: {
+        coingecko: {
+          price: (currency) => `https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=${currency}&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`,
+          history: (currency, days) => `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=${currency}&days=${days}`,
+          global: 'https://api.coingecko.com/api/v3/global'
+        },
+        blockchainInfo: {
+          mempoolCount: 'https://blockchain.info/q/unconfirmedcount',
+          mempoolSize: 'https://blockchain.info/q/unconfirmedsize',
+          blockHeight: 'https://blockchain.info/q/getblockcount',
+          hashRate: 'https://blockchain.info/q/hashrate'
+        },
+        fearGreed: 'https://api.alternative.me/fng/?limit=1',
+        cryptoCompareNews: 'https://min-api.cryptocompare.com/data/v2/news/?lang=EN'
+      },
+      // Proxy servers in case of CORS issues; default is empty (direct fetch)
+      proxyServers: {
+        none: '',
+        allorigins: 'https://api.allorigins.win/raw?url=',
+        thingproxy: 'https://thingproxy.freeboard.io/fetch/'
+      }
+    };
+
+    // Application state
+    const state = {
+      currency: 'eur',
+      range: 7,
+      proxy: 'none',
+      price: null,
+      market: null,
+      supply: null,
+      network: null,
+      mempool: null,
+      fgi: null,
+      history: null,
+      news: [],
+      newsPage: 0
+    };
+
+    // Cached chart instances
+    let priceChartInstance = null;
+    let fgiChartInstance = null;
+
+    // Utility: fetch with proxy and caching
+    async function fetchWithCache(url, cacheKey, ttl = 30000) {
+      const now = Date.now();
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const cachedData = JSON.parse(cached);
+          if (now - cachedData.timestamp < ttl) {
+            return cachedData.data;
+          }
+        } catch (e) {
+          // ignore corrupted cache
+        }
+      }
+      const proxiedUrl = CONFIG.proxyServers[state.proxy] + encodeURIComponent(url);
+      const response = await fetch(state.proxy === 'none' ? url : proxiedUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      localStorage.setItem(cacheKey, JSON.stringify({ timestamp: now, data }));
+      return data;
+    }
+
+    // Formatting helpers
+    function formatNumber(num, decimals = 2) {
+      return Number(num).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+    function formatCurrency(num, currency = 'USD', decimals = 2) {
+      return Number(num).toLocaleString('en-US', { style: 'currency', currency, minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+    function formatFileSize(bytes) {
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      if (bytes === 0) return '0 Bytes';
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return `${(bytes / (1024 ** i)).toFixed(2)} ${sizes[i]}`;
+    }
+
+    // UI update functions
+    function updatePriceCard() {
+      const priceElem = document.getElementById('price-value');
+      const changeElem = document.getElementById('price-change');
+      const timestampElem = document.getElementById('price-timestamp');
+      if (!state.price) return;
+      priceElem.textContent = formatCurrency(state.price.current, state.currency.toUpperCase());
+      const change = state.price.change24h;
+      changeElem.textContent = `${change >= 0 ? '+' : ''}${formatNumber(change)}%`;
+      changeElem.className = 'metric-change ' + (change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral');
+      timestampElem.textContent = `Updated: ${new Date(state.price.lastUpdated * 1000).toLocaleString()}`;
+    }
+    function updateMarketCard() {
+      const capElem = document.getElementById('market-cap');
+      const volElem = document.getElementById('market-volume');
+      const domElem = document.getElementById('market-dominance');
+      if (!state.market) return;
+      capElem.textContent = formatCurrency(state.market.marketCap, state.currency.toUpperCase(), 0);
+      volElem.textContent = formatCurrency(state.market.volume24h, state.currency.toUpperCase(), 0);
+      domElem.textContent = `${formatNumber(state.market.dominance, 2)}%`;
+    }
+    function updateSupplyCard() {
+      const circElem = document.getElementById('supply-circulating');
+      const percElem = document.getElementById('supply-percent');
+      if (!state.supply) return;
+      circElem.textContent = `${formatNumber(state.supply.circulating, 0)} BTC`;
+      percElem.textContent = `${formatNumber(state.supply.percentMined, 2)}%`;
+    }
+    function updateNetworkCard() {
+      const heightElem = document.getElementById('network-height');
+      const hashElem = document.getElementById('network-hashrate');
+      if (!state.network) return;
+      heightElem.textContent = state.network.blockHeight;
+      hashElem.textContent = `${formatNumber(state.network.hashRate / 1e6, 2)} PH/s`; // convert to petahash per second
+    }
+    function updateMempoolCard() {
+      const countElem = document.getElementById('mempool-count');
+      const sizeElem = document.getElementById('mempool-size');
+      if (!state.mempool) return;
+      countElem.textContent = formatNumber(state.mempool.count, 0);
+      sizeElem.textContent = formatFileSize(state.mempool.size);
+    }
+    function updateFGICard() {
+      const valueElem = document.getElementById('fgi-value');
+      if (!state.fgi) return;
+      valueElem.textContent = `${state.fgi.value} (${state.fgi.label})`;
+      // Chart update
+      const ctx = document.getElementById('fgi-chart').getContext('2d');
+      const chartData = {
+        labels: ['Index', 'Remaining'],
+        datasets: [{
+          data: [state.fgi.value, 100 - state.fgi.value],
+          backgroundColor: [state.fgi.value < 50 ? 'rgba(220,53,69,0.7)' : (state.fgi.value < 70 ? 'rgba(255,193,7,0.7)' : 'rgba(40,167,69,0.7)'), '#e9ecef'],
+          borderWidth: 0
+        }]
+      };
+      const options = {
+        rotation: -90,
+        circumference: 180,
+        plugins: { legend: { display: false }, tooltip: { enabled: true } }
+      };
+      if (fgiChartInstance) {
+        fgiChartInstance.data = chartData;
+        fgiChartInstance.update();
+      } else {
+        fgiChartInstance = new Chart(ctx, { type: 'doughnut', data: chartData, options });
+      }
+    }
+    function updatePriceChart() {
+      if (!state.history) return;
+      const labels = state.history.labels.map(d => moment(d).format('MM/DD'));
+      const dataPoints = state.history.prices;
+      const ctx = document.getElementById('price-chart').getContext('2d');
+      const data = {
+        labels,
+        datasets: [
+          {
+            label: `BTC Price (${state.currency.toUpperCase()})`,
+            data: dataPoints,
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0,123,255,0.1)',
+            fill: true,
+            tension: 0.1
+          }
+        ]
+      };
+      const options = {
+        responsive: true,
+        scales: {
+          x: { title: { display: true, text: 'Date' } },
+          y: { title: { display: true, text: `Price (${state.currency.toUpperCase()})` } }
+        },
+        plugins: { legend: { display: true }, tooltip: { enabled: true } }
+      };
+      if (priceChartInstance) {
+        priceChartInstance.data = data;
+        priceChartInstance.options = options;
+        priceChartInstance.update();
+      } else {
+        priceChartInstance = new Chart(ctx, { type: 'line', data, options });
+      }
+    }
+    function updateNewsSection() {
+      const listElem = document.getElementById('news-list');
+      const loadMoreBtn = document.getElementById('load-more-news');
+      if (!state.news || state.news.length === 0) {
+        listElem.innerHTML = '<div class="loading">No news articles available</div>';
+        loadMoreBtn.style.display = 'none';
+        return;
+      }
+      // Render current page (5 articles per page)
+      const pageSize = 5;
+      const startIndex = state.newsPage * pageSize;
+      const currentArticles = state.news.slice(0, startIndex + pageSize);
+      listElem.innerHTML = '';
+      currentArticles.forEach(article => {
+        const item = document.createElement('div');
+        item.className = 'news-item';
+        const imageUrl = article.imageurl || '';
+        item.innerHTML = `
+          ${imageUrl ? `<img src="${imageUrl}" alt="Thumbnail" />` : ''}
+          <div class="news-content">
+            <h3><a href="${article.url}" target="_blank" rel="noopener">${article.title}</a></h3>
+            <p>${article.source_info?.name || 'Unknown Source'} · ${new Date(article.published_on * 1000).toLocaleString()}</p>
+          </div>
+        `;
+        listElem.appendChild(item);
+      });
+      // Show load more if there are more articles
+      if (state.news.length > currentArticles.length) {
+        loadMoreBtn.style.display = 'inline-block';
+      } else {
+        loadMoreBtn.style.display = 'none';
+      }
+    }
+
+    // Data fetch functions
+    async function fetchPrice() {
+      const endpoint = CONFIG.apiEndpoints.coingecko.price(state.currency);
+      const data = await fetchWithCache(endpoint, `price-${state.currency}`);
+      if (!data.bitcoin) throw new Error('Invalid price data');
+      state.price = {
+        current: data.bitcoin[state.currency],
+        marketCap: data.bitcoin[`${state.currency}_market_cap`],
+        volume24h: data.bitcoin[`${state.currency}_24h_vol`],
+        change24h: data.bitcoin[`${state.currency}_24h_change`],
+        lastUpdated: data.bitcoin.last_updated_at
+      };
+    }
+    async function fetchGlobal() {
+      const data = await fetchWithCache(CONFIG.apiEndpoints.coingecko.global, 'global');
+      const marketCapUsd = data.data.total_market_cap[state.currency];
+      const btcCapUsd = data.data.market_cap_percentage.bitcoin;
+      state.market = {
+        marketCap: state.price.marketCap,
+        volume24h: state.price.volume24h,
+        dominance: btcCapUsd
+      };
+      state.supply = {
+        circulating: data.data.active_cryptocurrencies ? state.price.current / (btcCapUsd / 100) : 0, // fallback if not available
+        percentMined: (data.data.circulating_supply / CONFIG.maxSupply) * 100
+      };
+    }
+    async function fetchNetwork() {
+      const [blockHeight, hashRate] = await Promise.all([
+        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.blockHeight, 'blockHeight'),
+        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.hashRate, 'hashRate')
+      ]);
+      state.network = {
+        blockHeight: blockHeight,
+        hashRate: Number(hashRate)
+      };
+    }
+    async function fetchMempool() {
+      const [count, size] = await Promise.all([
+        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.mempoolCount, 'mempoolCount'),
+        fetchWithCache(CONFIG.apiEndpoints.blockchainInfo.mempoolSize, 'mempoolSize')
+      ]);
+      state.mempool = {
+        count: Number(count),
+        size: Number(size)
+      };
+    }
+    async function fetchFGI() {
+      const data = await fetchWithCache(CONFIG.apiEndpoints.fearGreed, 'fgi');
+      const latest = data.data[0];
+      state.fgi = {
+        value: parseInt(latest.value, 10),
+        label: latest.value_classification
+      };
+    }
+    async function fetchHistory() {
+      const data = await fetchWithCache(CONFIG.apiEndpoints.coingecko.history(state.currency, state.range), `history-${state.currency}-${state.range}`);
+      state.history = {
+        labels: data.prices.map(p => new Date(p[0])),
+        prices: data.prices.map(p => p[1])
+      };
+    }
+    async function fetchNews() {
+      const data = await fetchWithCache(CONFIG.apiEndpoints.cryptoCompareNews, 'news', 600000); // 10min TTL
+      if (!data.Data) throw new Error('Invalid news data');
+      state.news = data.Data;
+    }
+
+    async function refreshData() {
+      try {
+        // Show loading states
+        document.getElementById('last-update').textContent = 'Updating...';
+        await fetchPrice();
+        await Promise.all([
+          fetchGlobal(),
+          fetchNetwork(),
+          fetchMempool(),
+          fetchFGI(),
+          fetchHistory(),
+          fetchNews()
+        ]);
+        // Update UI
+        updatePriceCard();
+        updateMarketCard();
+        updateSupplyCard();
+        updateNetworkCard();
+        updateMempoolCard();
+        updateFGICard();
+        updatePriceChart();
+        updateNewsSection();
+        document.getElementById('last-update').textContent = `Last update: ${new Date().toLocaleString()}`;
+      } catch (err) {
+        console.error('Refresh error', err);
+        document.getElementById('last-update').textContent = 'Update failed';
+      }
+    }
+
+    // Event handlers
+    document.getElementById('currency-select').addEventListener('change', (e) => {
+      state.currency = e.target.value;
+      refreshData();
+    });
+    document.getElementById('range-select').addEventListener('change', (e) => {
+      state.range = parseInt(e.target.value, 10);
+      refreshData();
+    });
+    document.getElementById('theme-toggle').addEventListener('change', (e) => {
+      document.body.classList.toggle('dark', e.target.checked);
+    });
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      refreshData();
+    });
+    document.getElementById('load-more-news').addEventListener('click', () => {
+      state.newsPage++;
+      updateNewsSection();
+    });
+
+    // Initial load
+    window.addEventListener('load', () => {
+      refreshData();
+      // Auto refresh
+      setInterval(refreshData, CONFIG.autoRefreshInterval);
+    });
+  </script>
 </body>
 </html>
